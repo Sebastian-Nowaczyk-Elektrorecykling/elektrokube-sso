@@ -14,7 +14,7 @@ internal:53 {
 .:53 {
     bind {$NODE_IP}
     errors
-    forward . /etc/resolv.conf
+    import /etc/coredns/forwarders.conf
     cache 30
     loop
     reload

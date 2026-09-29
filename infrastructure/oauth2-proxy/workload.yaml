@@ -38,6 +38,9 @@ spec:
         - --email-domain=*
         - --oidc-email-claim=sub
         - --oidc-groups-claim=groups
+        # Verify issuer, audience, expiry and signature before exposing JWT claims.
+        - --skip-jwt-bearer-tokens=true
+        - --bearer-token-login-fallback=false
         - --cookie-name=__Host-elektrokube_sso
         - --cookie-path=/
         - --cookie-secure=true

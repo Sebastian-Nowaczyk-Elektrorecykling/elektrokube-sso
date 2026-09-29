@@ -5,8 +5,8 @@ metadata:
   namespace: sso
 spec:
   parentRefs:
-  - name: sso
-    sectionName: auth
+  - name: lan-gateway
+    sectionName: https
   hostnames:
   - auth.internal
   rules:
@@ -52,6 +52,7 @@ spec:
         grpc:
           allowedHeaders:
           - cookie
+          - authorization
           - accept
     backendRefs:
     - name: authentik-server
@@ -64,8 +65,8 @@ metadata:
   namespace: sso
 spec:
   parentRefs:
-  - name: sso
-    sectionName: authentik-admin
+  - name: lan-gateway
+    sectionName: https
   hostnames:
   - authentik.admin.internal
   rules:
@@ -121,6 +122,7 @@ spec:
         grpc:
           allowedHeaders:
           - cookie
+          - authorization
           - accept
     backendRefs:
     - name: authentik-server
@@ -133,8 +135,8 @@ metadata:
   namespace: sso
 spec:
   parentRefs:
-  - name: sso
-    sectionName: openfga-admin
+  - name: lan-gateway
+    sectionName: https
   hostnames:
   - openfga.admin.internal
   rules:
@@ -190,6 +192,7 @@ spec:
         grpc:
           allowedHeaders:
           - cookie
+          - authorization
           - accept
     backendRefs:
     - name: openfga

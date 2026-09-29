@@ -16,7 +16,10 @@ rules:
       - finalizer: noop
     on_error:
       - error_handler: login
-        if: type(Error) == authentication_error && Request.Header("Accept").contains("text/html")
+        if: >-
+          type(Error) == authentication_error &&
+          Request.Header("Authorization") == "" &&
+          Request.Header("Accept").contains("text/html")
   - id: authentik-admin
     match:
       hosts: [{type: exact, value: authentik.admin.internal}]
@@ -33,7 +36,10 @@ rules:
       - finalizer: noop
     on_error:
       - error_handler: login
-        if: type(Error) == authentication_error && Request.Header("Accept").contains("text/html")
+        if: >-
+          type(Error) == authentication_error &&
+          Request.Header("Authorization") == "" &&
+          Request.Header("Accept").contains("text/html")
   - id: openfga-admin
     match:
       hosts: [{type: exact, value: openfga.admin.internal}]
@@ -50,4 +56,7 @@ rules:
       - finalizer: openfga-credential
     on_error:
       - error_handler: login
-        if: type(Error) == authentication_error && Request.Header("Accept").contains("text/html")
+        if: >-
+          type(Error) == authentication_error &&
+          Request.Header("Authorization") == "" &&
+          Request.Header("Accept").contains("text/html")

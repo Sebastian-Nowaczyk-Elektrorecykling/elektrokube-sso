@@ -22,7 +22,10 @@ mechanisms:
           url: http://oauth2-proxy.sso.svc.cluster.local:4180/oauth2/userinfo
           method: GET
         authentication_data_source:
+          - header: Authorization
+            scheme: Bearer
           - cookie: __Host-elektrokube_sso
+        forward_headers: [Authorization]
         forward_cookies: [__Host-elektrokube_sso]
         subject:
           id: user
@@ -61,8 +64,10 @@ mechanisms:
           {{- $user := printf "user:%s" .Subject.ID -}}
           {{- $groups := .Subject.Attributes.groups | default list -}}
           {{- $tuples := list -}}
-          {{- if has "sso-users" $groups -}}
-            {{- $tuples = append $tuples (dict "user" $user "relation" "member" "object" "group:sso-users") -}}
+          {{- range $group := $groups -}}
+            {{- if regexMatch "^sso-[a-z0-9][a-z0-9._-]*$" $group -}}
+              {{- $tuples = append $tuples (dict "user" $user "relation" "member" "object" (printf "group:%s" $group)) -}}
+            {{- end -}}
           {{- end -}}
           {{- if or (has "cluster-admins" $groups) (has "authentik Admins" $groups) -}}
             {{- $tuples = append $tuples (dict "user" $user "relation" "member" "object" "group:cluster-admins") -}}

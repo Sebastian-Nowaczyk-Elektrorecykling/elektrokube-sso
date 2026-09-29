@@ -1,7 +1,7 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway
 metadata:
-  name: sso
+  name: lan-gateway
   namespace: sso
 spec:
   gatewayClassName: cilium
@@ -12,8 +12,9 @@ spec:
     allowedRoutes:
       namespaces:
         from: Same
-  - name: auth
-    hostname: auth.internal
+  # HTTPRoutes select hostnames; the shared listener imposes no DNS-depth limit.
+  # Every registered hostname still needs a SAN in the referenced certificate.
+  - name: https
     protocol: HTTPS
     port: 443
     tls:
@@ -24,135 +25,3 @@ spec:
     allowedRoutes:
       namespaces:
         from: Same
-  - name: authentik-admin
-    hostname: authentik.admin.internal
-    protocol: HTTPS
-    port: 443
-    tls:
-      mode: Terminate
-      certificateRefs:
-      - kind: Secret
-        name: sso-gateway-tls
-    allowedRoutes:
-      namespaces:
-        from: Same
-  - name: openfga-admin
-    hostname: openfga.admin.internal
-    protocol: HTTPS
-    port: 443
-    tls:
-      mode: Terminate
-      certificateRefs:
-      - kind: Secret
-        name: sso-gateway-tls
-    allowedRoutes:
-      namespaces:
-        from: Same
----
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: sso-http-redirect
-  namespace: sso
-spec:
-  parentRefs:
-  - name: sso
-    sectionName: http
-  hostnames:
-  - auth.internal
-  - authentik.admin.internal
-  - openfga.admin.internal
-  rules:
-  - filters:
-    - type: RequestRedirect
-      requestRedirect:
-        scheme: https
-        statusCode: 301
----
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: sso-login
-  namespace: sso
-spec:
-  parentRefs:
-  - name: sso
-    sectionName: auth
-  hostnames:
-  - auth.internal
-  rules:
-  - matches:
-    - path:
-        type: PathPrefix
-        value: /application/o/
-    - path:
-        type: PathPrefix
-        value: /if/flow/
-    - path:
-        type: PathPrefix
-        value: /api/v3/flows/executor/
-    - path:
-        type: PathPrefix
-        value: /static/
-    - path:
-        type: PathPrefix
-        value: /media/
-    backendRefs:
-    - name: authentik-server
-      port: 80
-    filters:
-    - type: RequestHeaderModifier
-      requestHeaderModifier:
-        set:
-        - name: X-Forwarded-Host
-          value: auth.internal
-        - name: X-Forwarded-Proto
-          value: https
-        remove:
-        - Forwarded
-        - X-Forwarded-Uri
-        - X-Auth-Request-Redirect
-  - matches:
-    - path:
-        type: Exact
-        value: /api/v3/root/config/
-    - path:
-        type: Exact
-        value: /api/v3/core/brands/current/
-    - path:
-        type: Exact
-        value: /api/v3/core/users/me/
-    backendRefs:
-    - name: authentik-server
-      port: 80
-    filters:
-    - type: RequestHeaderModifier
-      requestHeaderModifier:
-        set:
-        - name: X-Forwarded-Host
-          value: auth.internal
-        - name: X-Forwarded-Proto
-          value: https
-        remove:
-        - Forwarded
-        - X-Forwarded-Uri
-        - X-Auth-Request-Redirect
-  - matches:
-    - path:
-        type: PathPrefix
-        value: /oauth2/
-    backendRefs:
-    - name: oauth2-proxy
-      port: 4180
-    filters:
-    - type: RequestHeaderModifier
-      requestHeaderModifier:
-        set:
-        - name: X-Forwarded-Host
-          value: auth.internal
-        - name: X-Forwarded-Proto
-          value: https
-        remove:
-        - Forwarded
-        - X-Forwarded-Uri
-        - X-Auth-Request-Redirect

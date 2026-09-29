@@ -7,9 +7,9 @@ image, controller, Python policy, or installation script.
 
 ```mermaid
 flowchart TD
-    Browser[Browser] --> Gateway[Cilium Gateway]
+    Browser[Browser or workload] --> Gateway[Cilium lan-gateway]
     Gateway -->|Envoy ext_authz gRPC| Heimdall[Heimdall decision service]
-    Heimdall -->|Verify session cookie| OAuth[oauth2-proxy]
+    Heimdall -->|Verify cookie or bearer token| OAuth[oauth2-proxy]
     OAuth -->|OIDC| Authentik[Authentik directory]
     Heimdall -->|Check access| FGA[OpenFGA]
     Gateway -->|Only after allow| Service[Requested service]
@@ -26,12 +26,20 @@ flowchart TD
 Administrators are members of `cluster-admins` or Authentik's built-in `authentik Admins` group.
 The blueprint creates `sso-users` and `cluster-admins`; the latter has native Authentik
 superuser privileges. The generated `akadmin` account retains its upstream admin group.
-New ordinary accounts must be assigned `sso-users` by an administrator.
+New ordinary accounts must be assigned `sso-users` by an administrator. See
+[permission management](docs/permissions.md) for the UI procedure and per-service groups.
 
 Only the three hostnames above have routes and TLS certificates. There are no routes for
 Hubble, Longhorn, Garage, or any other pre-existing application. OpenFGA's development
 playground is disabled. Heimdall, PostgreSQL, controller endpoints and DNS metrics are
 not exposed through HTTP routes.
+
+The Gateway is **`sso/lan-gateway`**, with shared `http` and `https` listeners and no
+listener hostname restrictions. Hostnames belong to HTTPRoutes and certificates, not the
+Gateway listener. [Register another service](docs/service-onboarding.md) with any depth
+of hostname, for example `reports.team.internal`. DNS and the Gateway need no change.
+Routes are centrally owned in `sso`; a backend in another namespace uses a narrowly scoped
+ReferenceGrant. Namespace-wide permission to publish unprotected routes is not granted.
 
 The identity provider's login flows, OIDC endpoints, required bootstrap APIs and static
 assets on `auth.internal` are reachable before SSO. `/oauth2/` on each hostname goes to
@@ -83,6 +91,22 @@ OpenFGA API credential and oauth2-proxy cookie key. CloudNativePG generates data
 credentials. No passwords or private keys are committed, and the registration script
 does not print them.
 
+The checked base repository revisions (`elektrokube-scripts` `c14f849`, Cilium/Flux
+`283cec8`, storage `fbc601b`) do not install cert-manager. Cilium 1.20.2 defaults to
+Helm-generated Hubble certificates (`hubble.tls.auto.method=helm`); that is separate from
+a general-purpose certificate controller. CNPG also manages its own database certificates.
+Repository inspection does not prove the live cluster has no separate installation. Check:
+
+```sh
+kubectl get deployments -A -l app.kubernetes.io/name=cert-manager
+kubectl get crd certificates.cert-manager.io issuers.cert-manager.io clusterissuers.cert-manager.io
+kubectl get helmreleases -A
+```
+
+The registration script refuses a detected independent cert-manager installation so two
+controllers are not installed accidentally. Reusing an independently managed installation
+requires adapting the controller stage and its prerequisite checks before registration.
+
 The graph orders databases before applications, OpenFGA before its policy import,
 the identity provider's login routes before OIDC discovery, and authorization services
 before protected application routes. A failed dependency blocks its dependent stages.
@@ -101,7 +125,20 @@ change router/DHCP settings or install trust roots on client devices.
 Every A query at `internal` or any depth below it returns `cluster-settings.API_IP`:
 `auth.internal`, `openfga.admin.internal`, and `a.b.c.d.internal` all resolve. AAAA and
 other unsupported record types return NOERROR/NODATA. Other zones are forwarded to the
-cluster's existing resolver. DNS answers do not create Gateway routes or certificates.
+cluster's existing resolver by default. To use specific recursive resolvers, edit
+[`infrastructure/dns/forwarders.conf`](infrastructure/dns/forwarders.conf), for example:
+
+```text
+forward . 192.168.2.1 192.168.2.2
+```
+
+Use your own reachable resolver IPs, optionally with `:port`. Flux generates a versioned
+ConfigMap and rolls the DNS pods when this setting changes. The default `/etc/resolv.conf`
+uses the pod's cluster resolver. Do not forward back to these DNS pods or create a cycle
+through a router that sends all its queries here. `.internal` answers always stay local,
+including NODATA responses; they are never sent upstream.
+
+DNS answers do not create Gateway routes or certificates.
 This is a LAN resolver; restrict node port 53 to your client networks at the network edge.
 The Kubernetes cluster DNS configuration is not replaced.
 
@@ -114,6 +151,9 @@ kubectl -n sso get secret sso-root-ca -o jsonpath='{.data.tls\.crt}' \
 
 Only export `tls.crt`, never `tls.key`. cert-manager issues and renews exact-name server
 certificates for the three routes. Public ACME certificates are not used for `.internal`.
+TLS wildcard certificates cover only one label: `*.internal` does not cover
+`reports.team.internal`. The onboarding procedure adds an exact SAN for every endpoint,
+so deeper names work without weakening certificate verification.
 oauth2-proxy trusts this CA and uses `API_IP` as a host alias for `auth.internal`, so first
 reconciliation does not depend on LAN DNS already being configured. OIDC issuer and TLS
 verification remain enabled.
@@ -152,10 +192,30 @@ cookie; the Heimdall integration deliberately accepts only the single named cook
 Authorization uses the stable OIDC `sub` UUID, not an email address. oauth2-proxy's email
 field is mapped to `sub`; the email scope is not requested. This avoids relying on unverified
 directory email addresses. Client-supplied identity/group headers never supply OpenFGA
-membership. Only groups returned by oauth2-proxy after cookie verification become
+membership. Only groups returned by oauth2-proxy after cookie or bearer-token verification become
 contextual tuples. Missing groups, unknown services, denied checks and dependency errors
 deny access. Browser authentication failures redirect to login; API clients receive 401,
 and authenticated users without permission receive 403.
+
+## Non-interactive workloads
+
+Authentik's `client_credentials` grant is enabled. Each workload uses a dedicated
+Authentik service account and an expiring **app password**, exchanges it for a five-minute
+JWT access token, then sends `Authorization: Bearer <access_token>` to the service's HTTPS
+hostname. oauth2-proxy verifies the issuer, audience (`elektrokube`), signature and expiry;
+Heimdall checks the verified account's groups with OpenFGA. An invalid bearer token is
+rejected rather than falling back to browser login, even when `Accept: text/html` is sent.
+
+See [workload credentials and requests](docs/permissions.md#workload-credentials).
+Account creation alone grants no access. Do not distribute oauth2-proxy's shared OAuth
+client secret to workloads. Tokens must request `scope=profile` to include group claims.
+Existing tokens retain their claims until expiry; revoking the app password prevents new
+tokens but does not revoke already issued JWTs immediately.
+
+This protects HTTP requests through `lan-gateway`. It does not turn Kubernetes service
+account tokens into SSO tokens, configure SPIFFE/mTLS, change Kubernetes RBAC, or replace
+database and application-native authentication. Service-to-service calls must use the
+protected hostname if they are to pass through this authorization chain.
 
 ## OpenFGA policy lifecycle
 
@@ -196,7 +256,7 @@ Kubernetes access remains the recovery path even when web SSO is unavailable.
 ```sh
 kubectl -n flux-system get kustomizations -l app.kubernetes.io/part-of=elektrokube-sso
 kubectl -n sso get pods,jobs,clusters.postgresql.cnpg.io,certificates,httproutes
-kubectl -n sso get gateway sso -o yaml
+kubectl -n sso get gateway lan-gateway -o yaml
 kubectl -n sso get httproutes -o yaml
 dig @NODE_IP auth.internal
 dig +tcp @NODE_IP a.b.c.d.internal
@@ -209,6 +269,11 @@ hosts, an administrator is allowed, and an unknown hostname has no application r
 During a controlled maintenance window, make the authorizer unavailable and verify a
 protected request fails rather than reaching its backend. These live checks exercise
 Cilium routing and policies that offline manifest validation cannot prove.
+
+Upgrading the original configuration renames `Gateway/sso` to `Gateway/lan-gateway`.
+Flux prunes the old Gateway and updates the parent references. Because both use node ports
+80/443, expect a brief routing interruption while Cilium reconciles the rename. The CA,
+secrets, databases, HTTPRoute names and OpenFGA store are preserved.
 
 The shipped policy can be tested without a cluster:
 
@@ -245,3 +310,7 @@ Upstream references: [Cilium ExternalAuth](https://github.com/cilium/cilium/tree
 [OpenFGA store files](https://openfga.dev/docs/modeling/store-file-format),
 [CoreDNS templates](https://coredns.io/plugins/template/),
 [generated secrets](https://github.com/mittwald/kubernetes-secret-generator).
+See also [Authentik machine-to-machine authentication](https://docs.goauthentik.io/add-secure-apps/providers/oauth2/machine_to_machine/),
+[oauth2-proxy bearer-token validation](https://oauth2-proxy.github.io/oauth2-proxy/configuration/overview/),
+[Cilium hostname-free HTTPS listeners](https://docs.cilium.io/en/stable/network/servicemesh/gateway-api/default-tls-certificate/),
+and [CoreDNS forwarding](https://coredns.io/plugins/forward/).
