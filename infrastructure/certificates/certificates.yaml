@@ -1,0 +1,55 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: sso-selfsigned
+  namespace: sso
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: sso-root-ca
+  namespace: sso
+spec:
+  isCA: true
+  commonName: Elektrokube internal SSO CA
+  secretName: sso-root-ca
+  duration: 87600h
+  renewBefore: 8760h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: sso-selfsigned
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: sso-ca
+  namespace: sso
+spec:
+  ca:
+    secretName: sso-root-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: sso-gateway
+  namespace: sso
+spec:
+  secretName: sso-gateway-tls
+  duration: 2160h
+  renewBefore: 360h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  dnsNames:
+  - auth.internal
+  - authentik.admin.internal
+  - openfga.admin.internal
+  issuerRef:
+    name: sso-ca
+    kind: Issuer

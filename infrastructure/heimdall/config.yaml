@@ -1,0 +1,97 @@
+serve:
+  host: 0.0.0.0
+  port: 4456
+management:
+  host: 0.0.0.0
+  port: 4457
+log:
+  level: info
+  format: text
+metrics:
+  enabled: false
+tracing:
+  enabled: false
+mechanisms:
+  authenticators:
+    - id: deny
+      type: unauthorized
+    - id: session
+      type: generic
+      config:
+        identity_info_endpoint:
+          url: http://oauth2-proxy.sso.svc.cluster.local:4180/oauth2/userinfo
+          method: GET
+        authentication_data_source:
+          - cookie: __Host-elektrokube_sso
+        forward_cookies: [__Host-elektrokube_sso]
+        subject:
+          id: user
+        cache_ttl: 0s
+  contextualizers:
+    - id: store
+      type: generic
+      config:
+        endpoint:
+          url: http://openfga.sso.svc.cluster.local:8080/stores?name=elektrokube-sso-v1&page_size=100
+          method: GET
+          headers:
+            Authorization: Bearer ${OPENFGA_TOKEN}
+        cache_ttl: 30s
+  authorizers:
+    - id: unique-store
+      type: cel
+      config:
+        expressions:
+          - expression: >-
+              size(Outputs.store.stores) == 1 &&
+              Outputs.store.stores[0].name == 'elektrokube-sso-v1' &&
+              Outputs.store.continuation_token == ''
+            message: Exactly one complete policy store is required
+    - id: openfga
+      type: remote
+      config:
+        endpoint:
+          url: http://openfga.sso.svc.cluster.local:8080/stores/{{ (index .Outputs.store.stores 0).id }}/check
+          headers:
+            Authorization: Bearer ${OPENFGA_TOKEN}
+            Content-Type: application/json
+        # Only the authenticated oauth2-proxy response supplies group membership.
+        # JSON encoding prevents user-controlled claims from injecting tuples.
+        payload: |
+          {{- $user := printf "user:%s" .Subject.ID -}}
+          {{- $groups := .Subject.Attributes.groups | default list -}}
+          {{- $tuples := list -}}
+          {{- if has "sso-users" $groups -}}
+            {{- $tuples = append $tuples (dict "user" $user "relation" "member" "object" "group:sso-users") -}}
+          {{- end -}}
+          {{- if or (has "cluster-admins" $groups) (has "authentik Admins" $groups) -}}
+            {{- $tuples = append $tuples (dict "user" $user "relation" "member" "object" "group:cluster-admins") -}}
+          {{- end -}}
+          {{- dict "tuple_key" (dict "user" $user "relation" "can_access" "object" .Values.object)
+                   "contextual_tuples" (dict "tuple_keys" $tuples)
+                   "consistency" "HIGHER_CONSISTENCY" | toJson -}}
+        expressions:
+          - expression: Payload.allowed == true
+        cache_ttl: 0s
+  finalizers:
+    - id: noop
+      type: noop
+    - id: openfga-credential
+      type: header
+      config:
+        headers:
+          Authorization: Bearer ${OPENFGA_TOKEN}
+  error_handlers:
+    - id: login
+      type: redirect
+      config:
+        to: https://{{ .Request.URL.Host }}/oauth2/start?rd={{ .Request.URL | urlenc }}
+        code: 302
+default_rule:
+  execute:
+    - authenticator: deny
+    - finalizer: noop
+providers:
+  file_system:
+    src: /etc/heimdall-rules
+    watch: true

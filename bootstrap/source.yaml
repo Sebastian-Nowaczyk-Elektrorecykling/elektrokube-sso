@@ -1,0 +1,10 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: elektrokube-sso
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: https://github.com/Sebastian-Nowaczyk-Elektrorecykling/elektrokube-sso.git
+  ref:
+    branch: main

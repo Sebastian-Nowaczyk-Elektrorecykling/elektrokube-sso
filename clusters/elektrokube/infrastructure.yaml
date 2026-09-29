@@ -1,0 +1,297 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sso-foundation
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: elektrokube-sso
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 20m
+  path: ./infrastructure/foundation
+  sourceRef:
+    kind: GitRepository
+    name: elektrokube-sso
+  prune: false
+  deletionPolicy: Orphan
+  wait: false
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sso-controllers
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: elektrokube-sso
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 20m
+  path: ./infrastructure/controllers
+  sourceRef:
+    kind: GitRepository
+    name: elektrokube-sso
+  prune: false
+  deletionPolicy: Orphan
+  wait: true
+  dependsOn:
+  - name: sso-foundation
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sso-credentials
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: elektrokube-sso
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 20m
+  path: ./infrastructure/credentials
+  sourceRef:
+    kind: GitRepository
+    name: elektrokube-sso
+  prune: false
+  deletionPolicy: Orphan
+  wait: false
+  dependsOn:
+  - name: sso-controllers
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sso-certificates
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: elektrokube-sso
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 20m
+  path: ./infrastructure/certificates
+  sourceRef:
+    kind: GitRepository
+    name: elektrokube-sso
+  prune: false
+  deletionPolicy: Orphan
+  wait: true
+  dependsOn:
+  - name: sso-controllers
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sso-databases
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: elektrokube-sso
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 20m
+  path: ./infrastructure/databases
+  sourceRef:
+    kind: GitRepository
+    name: elektrokube-sso
+  prune: false
+  deletionPolicy: Orphan
+  wait: true
+  dependsOn:
+  - name: sso-foundation
+  - name: storage-cnpg
+  - name: storage-classes
+  healthChecks:
+  - apiVersion: postgresql.cnpg.io/v1
+    kind: Cluster
+    name: authentik-db
+    namespace: sso
+  - apiVersion: postgresql.cnpg.io/v1
+    kind: Cluster
+    name: openfga-db
+    namespace: sso
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sso-authentik
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: elektrokube-sso
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 20m
+  path: ./infrastructure/authentik
+  sourceRef:
+    kind: GitRepository
+    name: elektrokube-sso
+  prune: false
+  deletionPolicy: Orphan
+  wait: true
+  dependsOn:
+  - name: sso-credentials
+  - name: sso-databases
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sso-openfga
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: elektrokube-sso
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 20m
+  path: ./infrastructure/openfga
+  sourceRef:
+    kind: GitRepository
+    name: elektrokube-sso
+  prune: true
+  deletionPolicy: Orphan
+  wait: true
+  dependsOn:
+  - name: sso-credentials
+  - name: sso-databases
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sso-authorization
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: elektrokube-sso
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 20m
+  path: ./infrastructure/authorization
+  sourceRef:
+    kind: GitRepository
+    name: elektrokube-sso
+  prune: false
+  deletionPolicy: Orphan
+  wait: true
+  dependsOn:
+  - name: sso-openfga
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sso-gateway
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: elektrokube-sso
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 20m
+  path: ./infrastructure/gateway
+  sourceRef:
+    kind: GitRepository
+    name: elektrokube-sso
+  prune: true
+  deletionPolicy: Orphan
+  wait: false
+  dependsOn:
+  - name: sso-authentik
+  - name: sso-certificates
+  - name: cilium
+  - name: gateway-api
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sso-oauth2-proxy
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: elektrokube-sso
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 20m
+  path: ./infrastructure/oauth2-proxy
+  sourceRef:
+    kind: GitRepository
+    name: elektrokube-sso
+  prune: true
+  deletionPolicy: Orphan
+  wait: true
+  dependsOn:
+  - name: sso-gateway
+  - name: sso-credentials
+  postBuild:
+    substituteFrom:
+    - kind: ConfigMap
+      name: cluster-settings
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sso-heimdall
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: elektrokube-sso
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 20m
+  path: ./infrastructure/heimdall
+  sourceRef:
+    kind: GitRepository
+    name: elektrokube-sso
+  prune: true
+  deletionPolicy: Orphan
+  wait: true
+  dependsOn:
+  - name: sso-oauth2-proxy
+  - name: sso-authorization
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sso-routes
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: elektrokube-sso
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 20m
+  path: ./infrastructure/routes
+  sourceRef:
+    kind: GitRepository
+    name: elektrokube-sso
+  prune: true
+  deletionPolicy: Orphan
+  wait: false
+  dependsOn:
+  - name: sso-heimdall
+  - name: sso-gateway
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sso-dns
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: elektrokube-sso
+spec:
+  interval: 5m
+  retryInterval: 1m
+  timeout: 20m
+  path: ./infrastructure/dns
+  sourceRef:
+    kind: GitRepository
+    name: elektrokube-sso
+  prune: true
+  deletionPolicy: Orphan
+  wait: true
+  dependsOn:
+  - name: sso-gateway
+  postBuild:
+    substituteFrom:
+    - kind: ConfigMap
+      name: cluster-settings

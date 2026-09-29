@@ -1,0 +1,21 @@
+internal:53 {
+    bind {$NODE_IP}
+    errors
+    template IN A internal {
+        answer "{{ .Name }} 60 IN A {$GATEWAY_IP}"
+    }
+    template IN ANY internal {
+        rcode NOERROR
+        authority "internal. 60 IN SOA ns.internal. hostmaster.internal. 1 3600 600 86400 60"
+    }
+    cache 30
+    reload
+}
+.:53 {
+    bind {$NODE_IP}
+    errors
+    forward . /etc/resolv.conf
+    cache 30
+    loop
+    reload
+}

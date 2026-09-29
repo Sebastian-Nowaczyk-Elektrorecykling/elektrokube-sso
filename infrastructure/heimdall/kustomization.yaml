@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- workload.yaml
+configMapGenerator:
+- name: heimdall-config
+  namespace: sso
+  files:
+  - config.yaml
+- name: heimdall-rules
+  namespace: sso
+  files:
+  - rules.yaml

@@ -1,0 +1,196 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: sso-auth
+  namespace: sso
+spec:
+  parentRefs:
+  - name: sso
+    sectionName: auth
+  hostnames:
+  - auth.internal
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /if/admin
+    filters:
+    - type: RequestRedirect
+      requestRedirect:
+        hostname: authentik.admin.internal
+        statusCode: 302
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        remove:
+        - X-Auth-Request-User
+        - X-Auth-Request-Email
+        - X-Auth-Request-Groups
+        - X-Forwarded-User
+        - X-Forwarded-Email
+        - X-Forwarded-Groups
+        - Remote-User
+        - Remote-Groups
+        - Forwarded
+        - X-Forwarded-Uri
+        - X-Auth-Request-Redirect
+        set:
+        - name: X-Forwarded-Host
+          value: auth.internal
+        - name: X-Forwarded-Proto
+          value: https
+    - type: ExternalAuth
+      externalAuth:
+        protocol: GRPC
+        backendRef:
+          name: heimdall-authz
+          port: 4456
+        grpc:
+          allowedHeaders:
+          - cookie
+          - accept
+    backendRefs:
+    - name: authentik-server
+      port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: sso-authentik-admin
+  namespace: sso
+spec:
+  parentRefs:
+  - name: sso
+    sectionName: authentik-admin
+  hostnames:
+  - authentik.admin.internal
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /oauth2/
+    backendRefs:
+    - name: oauth2-proxy
+      port: 4180
+    filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        set:
+        - name: X-Forwarded-Host
+          value: authentik.admin.internal
+        - name: X-Forwarded-Proto
+          value: https
+        remove:
+        - Forwarded
+        - X-Forwarded-Uri
+        - X-Auth-Request-Redirect
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        remove:
+        - X-Auth-Request-User
+        - X-Auth-Request-Email
+        - X-Auth-Request-Groups
+        - X-Forwarded-User
+        - X-Forwarded-Email
+        - X-Forwarded-Groups
+        - Remote-User
+        - Remote-Groups
+        - Forwarded
+        - X-Forwarded-Uri
+        - X-Auth-Request-Redirect
+        set:
+        - name: X-Forwarded-Host
+          value: authentik.admin.internal
+        - name: X-Forwarded-Proto
+          value: https
+    - type: ExternalAuth
+      externalAuth:
+        protocol: GRPC
+        backendRef:
+          name: heimdall-authz
+          port: 4456
+        grpc:
+          allowedHeaders:
+          - cookie
+          - accept
+    backendRefs:
+    - name: authentik-server
+      port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: sso-openfga-admin
+  namespace: sso
+spec:
+  parentRefs:
+  - name: sso
+    sectionName: openfga-admin
+  hostnames:
+  - openfga.admin.internal
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /oauth2/
+    backendRefs:
+    - name: oauth2-proxy
+      port: 4180
+    filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        set:
+        - name: X-Forwarded-Host
+          value: openfga.admin.internal
+        - name: X-Forwarded-Proto
+          value: https
+        remove:
+        - Forwarded
+        - X-Forwarded-Uri
+        - X-Auth-Request-Redirect
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        remove:
+        - X-Auth-Request-User
+        - X-Auth-Request-Email
+        - X-Auth-Request-Groups
+        - X-Forwarded-User
+        - X-Forwarded-Email
+        - X-Forwarded-Groups
+        - Remote-User
+        - Remote-Groups
+        - Forwarded
+        - X-Forwarded-Uri
+        - X-Auth-Request-Redirect
+        set:
+        - name: X-Forwarded-Host
+          value: openfga.admin.internal
+        - name: X-Forwarded-Proto
+          value: https
+    - type: ExternalAuth
+      externalAuth:
+        protocol: GRPC
+        backendRef:
+          name: heimdall-authz
+          port: 4456
+        grpc:
+          allowedHeaders:
+          - cookie
+          - accept
+    backendRefs:
+    - name: openfga
+      port: 8080

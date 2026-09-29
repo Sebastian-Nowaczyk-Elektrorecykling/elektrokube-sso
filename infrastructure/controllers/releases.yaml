@@ -1,0 +1,84 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: sso-cert-manager
+  namespace: cert-manager
+spec:
+  interval: 10m
+  timeout: 15m
+  releaseName: sso-cert-manager
+  chart:
+    spec:
+      chart: cert-manager
+      version: v1.21.2
+      sourceRef:
+        kind: HelmRepository
+        name: sso-cert-manager
+        namespace: flux-system
+  install:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 2m
+  upgrade:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 2m
+  driftDetection:
+    mode: enabled
+  values:
+    crds:
+      enabled: true
+    tolerations: &id001
+    - key: CriticalAddonsOnly
+      operator: Exists
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    webhook:
+      tolerations: *id001
+    cainjector:
+      tolerations: *id001
+    startupapicheck:
+      tolerations: *id001
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: sso-secret-generator
+  namespace: sso
+spec:
+  interval: 10m
+  timeout: 15m
+  releaseName: sso-secret-generator
+  chart:
+    spec:
+      chart: kubernetes-secret-generator
+      version: 3.4.1
+      sourceRef:
+        kind: HelmRepository
+        name: sso-secret-generator
+        namespace: flux-system
+  install:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 2m
+  upgrade:
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 2m
+  driftDetection:
+    mode: enabled
+  values:
+    watchNamespace: sso
+    rbac:
+      create: true
+      clusterRole: false
+    installCRDs: true
+    tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    image:
+      pullPolicy: IfNotPresent

@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: sso-dns
+  namespace: sso
+spec:
+  selector:
+    matchLabels:
+      app: sso-dns
+  template:
+    metadata:
+      labels:
+        app: sso-dns
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      automountServiceAccountToken: false
+      tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: coredns
+        image: coredns/coredns:1.14.7
+        args:
+        - -conf
+        - /etc/coredns/Corefile
+        env:
+        - name: GATEWAY_IP
+          value: ${API_IP}
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        ports:
+        - name: dns-udp
+          containerPort: 53
+          protocol: UDP
+        - name: dns-tcp
+          containerPort: 53
+          protocol: TCP
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_BIND_SERVICE
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 65532
+        resources:
+          requests:
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+        readinessProbe:
+          tcpSocket:
+            port: 53
+        livenessProbe:
+          tcpSocket:
+            port: 53
+          initialDelaySeconds: 15
+        volumeMounts:
+        - name: config
+          mountPath: /etc/coredns
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: sso-dns

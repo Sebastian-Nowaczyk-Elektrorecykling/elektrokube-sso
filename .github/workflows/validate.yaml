@@ -1,0 +1,46 @@
+name: Validate SSO configuration
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  manifests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        path:
+          - bootstrap
+          - clusters/elektrokube
+          - infrastructure/foundation
+          - infrastructure/controllers
+          - infrastructure/credentials
+          - infrastructure/certificates
+          - infrastructure/databases
+          - infrastructure/authentik
+          - infrastructure/openfga
+          - infrastructure/authorization
+          - infrastructure/gateway
+          - infrastructure/oauth2-proxy
+          - infrastructure/heimdall
+          - infrastructure/routes
+          - infrastructure/dns
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render manifests
+        run: kubectl kustomize '${{ matrix.path }}' > /dev/null
+  upstream-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test OpenFGA permissions
+        run: >-
+          docker run --rm -v "$PWD/infrastructure/authorization:/policy:ro"
+          openfga/cli:v0.8.1 model test --tests /policy/store.fga.yaml
+      - name: Validate Heimdall rules and mechanisms
+        run: >-
+          docker run --rm -v "$PWD/infrastructure/heimdall:/etc/heimdall:ro"
+          -v "$PWD/infrastructure/heimdall:/etc/heimdall-rules:ro"
+          -e OPENFGA_TOKEN=validation-token dadrus/heimdall:0.17.22
+          validate rules /etc/heimdall/rules.yaml --config /etc/heimdall/config.yaml
+          --insecure-skip-ingress-tls-enforcement --insecure-skip-egress-tls-enforcement

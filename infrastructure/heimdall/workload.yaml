@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: heimdall-authz
+  namespace: sso
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: heimdall-authz
+  template:
+    metadata:
+      labels:
+        app: heimdall-authz
+    spec:
+      automountServiceAccountToken: false
+      tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: heimdall-authz
+        image: dadrus/heimdall:0.17.22
+        args:
+        - serve
+        - decision
+        - --envoy-grpc
+        - --config=/etc/heimdall/config.yaml
+        - --insecure-skip-ingress-tls-enforcement
+        - --insecure-skip-egress-tls-enforcement
+        ports:
+        - name: grpc
+          containerPort: 4456
+        - name: management
+          containerPort: 4457
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 65532
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+        env:
+        - name: OPENFGA_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: sso-credentials
+              key: openfga-token
+        volumeMounts:
+        - name: config
+          mountPath: /etc/heimdall
+          readOnly: true
+        - name: rules
+          mountPath: /etc/heimdall-rules
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: management
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: management
+          initialDelaySeconds: 15
+      volumes:
+      - name: config
+        configMap:
+          name: heimdall-config
+      - name: rules
+        configMap:
+          name: heimdall-rules
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: heimdall-authz
+  namespace: sso
+spec:
+  type: ClusterIP
+  selector:
+    app: heimdall-authz
+  ports:
+  - name: grpc
+    port: 4456
+    targetPort: grpc
+    appProtocol: kubernetes.io/h2c

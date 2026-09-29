@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openfga
+  namespace: sso
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openfga
+  template:
+    metadata:
+      labels:
+        app: openfga
+    spec:
+      automountServiceAccountToken: false
+      tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: openfga
+        image: openfga/openfga:v1.21.0
+        args:
+        - run
+        ports:
+        - name: http
+          containerPort: 8080
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: &id003
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 65532
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+        env:
+        - &id001
+          name: OPENFGA_DATASTORE_ENGINE
+          value: postgres
+        - &id002
+          name: OPENFGA_DATASTORE_URI
+          valueFrom:
+            secretKeyRef:
+              name: openfga-db-app
+              key: uri
+        - name: OPENFGA_AUTHN_METHOD
+          value: preshared
+        - name: OPENFGA_AUTHN_PRESHARED_KEYS
+          valueFrom:
+            secretKeyRef:
+              name: sso-credentials
+              key: openfga-token
+        - name: OPENFGA_PLAYGROUND_ENABLED
+          value: 'false'
+        - name: OPENFGA_LOG_FORMAT
+          value: json
+        - name: OPENFGA_HTTP_CORS_ALLOWED_ORIGINS
+          value: https://openfga.admin.internal
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 30
+      initContainers:
+      - name: migrate
+        image: openfga/openfga:v1.21.0
+        args:
+        - migrate
+        env:
+        - *id001
+        - *id002
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: *id003
+          runAsNonRoot: true
+          runAsUser: 65532
+          runAsGroup: 65532
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openfga
+  namespace: sso
+spec:
+  type: ClusterIP
+  selector:
+    app: openfga
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
