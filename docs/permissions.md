@@ -1,8 +1,9 @@
 # Manage users and workload access
 
-Authentik is the user directory and the UI for granting access. OpenFGA holds the
-service-to-group grants. People and service accounts are denied until their verified
-groups have a grant for the requested service. There is no custom administration app.
+Authentik is the user directory and the UI for granting access. Heimdall's built-in
+group authorizer checks the verified groups against the requested service's rule.
+People and service accounts are denied until they belong to an allowed group.
+There is no separate permission database or custom administration app.
 
 ## Grant a person access
 
@@ -12,8 +13,8 @@ groups have a grant for the requested service. There is no custom administration
 3. Under **Directory → Groups**, open `sso-users`, then **Users → Add existing user**
    and select the account. This grants the user portal, not administrator tools.
 4. For an onboarded application, add the user to its `sso-<application>` group, for
-   example `sso-reports`. Its OpenFGA grant must already exist. Creating a group or
-   assigning it to a user without a service grant grants nothing.
+   example `sso-reports`. The service's Heimdall rule must name that group. Creating
+   a group or assigning it to a user without a matching rule grants nothing.
 5. To remove access, remove the membership or deactivate the account. Existing cookies
    and JWTs can retain the previous claims for up to five minutes. Sign out and sign
    back in at the application's `/oauth2/sign_out` to pick up grants immediately.
@@ -26,9 +27,9 @@ The blueprint manages group definitions and the provider, not group membership.
 | --- | --- |
 | No matching group | No protected service |
 | `sso-users` | User portal at `auth.internal` |
-| `cluster-admins` | All three shipped endpoints, plus native Authentik superuser privileges |
+| `cluster-admins` | All registered protected services, plus native Authentik superuser privileges |
 | Built-in `authentik Admins` | Same Gateway access as `cluster-admins`; native Authentik admin privileges |
-| New `sso-<application>` group | Nothing until a service grant is registered in OpenFGA |
+| New `sso-<application>` group | The services whose Heimdall rules name that group |
 
 Reserve `cluster-admins` for actual cluster administrators. Do not use it to solve an
 ordinary application's permission problem. Addresses under `.admin.internal` receive
@@ -37,26 +38,26 @@ only administrator grants; ordinary services use other names under `.internal`.
 ## Register a permission for a new service
 
 Use [service onboarding](service-onboarding.md) to register the route, certificate,
-callback, Heimdall rule and OpenFGA grant together. For ordinary services, create a group
-with a name matching `sso-[a-z0-9][a-z0-9._-]*`. The built-in `sso-users` follows the same
-rule. Heimdall automatically converts only verified groups in this naming convention
-into OpenFGA contextual membership tuples; a new group does not require a mechanism edit.
-The two administrator group names have a separate explicit mapping to `cluster-admins`.
-
-A grant such as the following lets members of `sso-reports` access that service:
+callback and Heimdall rule together. For ordinary services, create an Authentik group
+such as `sso-reports`. The `sso-` prefix is a naming convention; membership is checked by
+exact name, including case. In the service's rule, set:
 
 ```yaml
-- user: group:sso-reports#member
-  relation: viewer
-  object: service:reports.team.internal
+- authorizer: service-group
+  config:
+    values:
+      group: sso-reports
 ```
 
-Keep these **service grants** and their tests in Git and follow the versioned OpenFGA
-policy release procedure in the [README](../README.md#openfga-policy-lifecycle).
-Do not copy user/group memberships into OpenFGA: verified Authentik claims supply them
-on every check. A claim naming a nonexistent or ungranted group cannot create access.
-OpenFGA's admin endpoint is an API, not a permission-management web UI; day-to-day
-user access is managed in Authentik.
+An empty `group: ""` means administrator-only. `cluster-admins` and the built-in
+`authentik Admins` group can access every registered protected service. Unknown hosts
+remain denied even for administrators. Use an empty group for `.admin.internal` hosts.
+
+Keep the per-service rules in Git; Flux applies changes to Heimdall's rule ConfigMap.
+There is no import Job, model release or second copy of user membership to maintain.
+The verified Authentik claims supply membership on each request. Day-to-day account
+creation, grants and removals happen in Authentik's UI. The same rule applies to people
+and workload identities.
 
 Gateway access is an outer gate. Applications still enforce their own roles and session
 checks. For example, granting entry to the Authentik admin hostname alone does not
@@ -106,7 +107,7 @@ custom policy or property mapping. Its standard `profile` mapping provides group
 
 oauth2-proxy verifies tokens for this provider and audience. Invalid, expired,
 wrong-audience or wrong-issuer tokens fail authentication. A valid token with no
-matching service grant fails authorization. Spoofed identity/group headers grant nothing.
+matching allowed group fails authorization. Spoofed identity/group headers grant nothing.
 Revoking the app password blocks new tokens; issued JWTs remain valid until expiry.
 The Gateway does not bypass any additional authentication required by the backend.
 

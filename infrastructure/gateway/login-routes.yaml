@@ -10,7 +10,6 @@ spec:
   hostnames:
   - auth.internal
   - authentik.admin.internal
-  - openfga.admin.internal
   rules:
   - filters:
     - type: RequestRedirect

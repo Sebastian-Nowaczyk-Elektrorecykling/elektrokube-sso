@@ -11,7 +11,7 @@ flowchart TD
     Gateway -->|Envoy ext_authz gRPC| Heimdall[Heimdall decision service]
     Heimdall -->|Verify cookie or bearer token| OAuth[oauth2-proxy]
     OAuth -->|OIDC| Authentik[Authentik directory]
-    Heimdall -->|Check access| FGA[OpenFGA]
+    Heimdall -->|Check verified groups locally| Heimdall
     Gateway -->|Only after allow| Service[Requested service]
 ```
 
@@ -21,7 +21,6 @@ flowchart TD
 | --- | --- | --- |
 | `https://auth.internal/if/user/` | Authentik user portal and account settings | `sso-users` or administrators |
 | `https://authentik.admin.internal/if/admin/` | Authentik administration | Administrators only, plus Authentik's native administrator permission |
-| `https://openfga.admin.internal/stores` | OpenFGA administration API | Administrators only |
 
 Administrators are members of `cluster-admins` or Authentik's built-in `authentik Admins` group.
 The blueprint creates `sso-users` and `cluster-admins`; the latter has native Authentik
@@ -29,10 +28,9 @@ superuser privileges. The generated `akadmin` account retains its upstream admin
 New ordinary accounts must be assigned `sso-users` by an administrator. See
 [permission management](docs/permissions.md) for the UI procedure and per-service groups.
 
-Only the three hostnames above have routes and TLS certificates. There are no routes for
-Hubble, Longhorn, Garage, or any other pre-existing application. OpenFGA's development
-playground is disabled. Heimdall, PostgreSQL, controller endpoints and DNS metrics are
-not exposed through HTTP routes.
+Only the two hostnames above have routes and TLS certificates. There are no routes for
+Hubble, Longhorn, Garage, or any other pre-existing application. Heimdall, PostgreSQL,
+controller endpoints and DNS metrics are not exposed through HTTP routes.
 
 The Gateway is **`sso/lan-gateway`**, with shared `http` and `https` listeners and no
 listener hostname restrictions. Hostnames belong to HTTPRoutes and certificates, not the
@@ -52,7 +50,7 @@ authorization check. Because it uses a separate origin, its native login may ask
 authenticate once on that origin as well. `/if/admin/` on the ordinary user hostname
 redirects to the administrator hostname. Authentik's own RBAC protects its shared API.
 
-## Install
+## Fresh installation
 
 Prerequisites already provided by the linked repositories:
 
@@ -86,8 +84,8 @@ kubectl apply --server-side --field-manager=kustomize-controller \
 ```
 
 Flux installs cert-manager and a namespace-scoped Mittwald secret generator. The latter
-generates the Authentik secret key, OIDC client secret, initial administrator password,
-OpenFGA API credential and oauth2-proxy cookie key. CloudNativePG generates database
+generates the Authentik secret key, OIDC client secret, initial administrator password
+and oauth2-proxy cookie key. CloudNativePG generates database
 credentials. No passwords or private keys are committed, and the registration script
 does not print them.
 
@@ -107,9 +105,9 @@ The registration script refuses a detected independent cert-manager installation
 controllers are not installed accidentally. Reusing an independently managed installation
 requires adapting the controller stage and its prerequisite checks before registration.
 
-The graph orders databases before applications, OpenFGA before its policy import,
-the identity provider's login routes before OIDC discovery, and authorization services
-before protected application routes. A failed dependency blocks its dependent stages.
+The graph orders Authentik's database before Authentik, the identity provider's login
+routes before OIDC discovery, and Heimdall before protected application routes. A failed
+dependency blocks its dependent stages.
 
 ## DNS and certificate trust
 
@@ -123,9 +121,9 @@ node IPs. Alternatively, distribute these DNS servers through DHCP. The reposito
 change router/DHCP settings or install trust roots on client devices.
 
 Every A query at `internal` or any depth below it returns `cluster-settings.API_IP`:
-`auth.internal`, `openfga.admin.internal`, and `a.b.c.d.internal` all resolve. AAAA and
+`auth.internal`, `authentik.admin.internal`, and `a.b.c.d.internal` all resolve. AAAA and
 other unsupported record types return NOERROR/NODATA. Other zones are forwarded to the
-cluster's existing resolver by default. To use specific recursive resolvers, edit
+configured upstreams, currently `8.8.8.8` and `1.1.1.1`. To change the recursive resolvers, edit
 [`infrastructure/dns/forwarders.conf`](infrastructure/dns/forwarders.conf), for example:
 
 ```text
@@ -133,8 +131,8 @@ forward . 192.168.2.1 192.168.2.2
 ```
 
 Use your own reachable resolver IPs, optionally with `:port`. Flux generates a versioned
-ConfigMap and rolls the DNS pods when this setting changes. The default `/etc/resolv.conf`
-uses the pod's cluster resolver. Do not forward back to these DNS pods or create a cycle
+ConfigMap and rolls the DNS pods when this setting changes. To use the pod's cluster
+resolver instead, set `forward . /etc/resolv.conf`. Do not forward back to these DNS pods or create a cycle
 through a router that sends all its queries here. `.internal` answers always stay local,
 including NODATA responses; they are never sent upstream.
 
@@ -150,7 +148,7 @@ kubectl -n sso get secret sso-root-ca -o jsonpath='{.data.tls\.crt}' \
 ```
 
 Only export `tls.crt`, never `tls.key`. cert-manager issues and renews exact-name server
-certificates for the three routes. Public ACME certificates are not used for `.internal`.
+certificates for the two hostnames. Public ACME certificates are not used for `.internal`.
 TLS wildcard certificates cover only one label: `*.internal` does not cover
 `reports.team.internal`. The onboarding procedure adds an exact SAN for every endpoint,
 so deeper names work without weakening certificate verification.
@@ -178,7 +176,7 @@ It reuses Authentik's upstream flows, signing certificate and standard profile s
 there are no custom Python expressions.
 
 Each hostname uses its own secure, HTTP-only `__Host-elektrokube_sso` cookie. There is no
-cookie for the bare `.internal` suffix. All three exact callback URLs are registered in
+cookie for the bare `.internal` suffix. Both exact callback URLs are registered in
 Authentik. Moving between services performs an OIDC redirect and reuses the central
 Authentik session; it does not require a shared application cookie. PKCE S256 is enabled.
 
@@ -189,12 +187,12 @@ use each origin's `/oauth2/sign_out`, or wait for expiry. For emergency revocati
 the cookie key and restart oauth2-proxy. Group names should stay small enough to fit one
 cookie; the Heimdall integration deliberately accepts only the single named cookie.
 
-Authorization uses the stable OIDC `sub` UUID, not an email address. oauth2-proxy's email
-field is mapped to `sub`; the email scope is not requested. This avoids relying on unverified
-directory email addresses. Client-supplied identity/group headers never supply OpenFGA
-membership. Only groups returned by oauth2-proxy after cookie or bearer-token verification become
-contextual tuples. Missing groups, unknown services, denied checks and dependency errors
-deny access. Browser authentication failures redirect to login; API clients receive 401,
+Identity uses the stable OIDC `sub` UUID, not an email address. oauth2-proxy's email field
+is mapped to `sub`; the email scope is not requested. This avoids relying on unverified
+directory email addresses. Heimdall checks only groups returned by oauth2-proxy after
+cookie or bearer-token verification. Client-supplied identity/group headers grant nothing.
+Missing groups, unknown services, denied checks and authentication-service errors deny
+access. Browser authentication failures redirect to login; API clients receive 401,
 and authenticated users without permission receive 403.
 
 ## Non-interactive workloads
@@ -203,7 +201,7 @@ Authentik's `client_credentials` grant is enabled. Each workload uses a dedicate
 Authentik service account and an expiring **app password**, exchanges it for a five-minute
 JWT access token, then sends `Authorization: Bearer <access_token>` to the service's HTTPS
 hostname. oauth2-proxy verifies the issuer, audience (`elektrokube`), signature and expiry;
-Heimdall checks the verified account's groups with OpenFGA. An invalid bearer token is
+Heimdall checks the verified account's groups against the service rule locally. An invalid bearer token is
 rejected rather than falling back to browser login, even when `Accept: text/html` is sent.
 
 See [workload credentials and requests](docs/permissions.md#workload-credentials).
@@ -217,45 +215,31 @@ account tokens into SSO tokens, configure SPIFFE/mTLS, change Kubernetes RBAC, o
 database and application-native authentication. Service-to-service calls must use the
 protected hostname if they are to pass through this authorization chain.
 
-## OpenFGA policy lifecycle
+## Service permissions
 
-`infrastructure/authorization/store.fga.yaml` contains the authorization model, service
-grants and executable upstream CLI tests. The retained `openfga-policy-v1` Job runs
-`openfga/cli store import` directly, without a shell or custom bootstrap program. User
-membership is supplied as contextual tuples on each check; no directory synchronization
-job or persisted user-membership copy is needed.
+Heimdall's built-in CEL authorizer checks verified Authentik groups on each request.
+There is no separate authorization service, policy database or policy-import Job.
+The native `service-group` mechanism is defined in `infrastructure/heimdall/config.yaml`;
+per-service rules are in `infrastructure/heimdall/rules.yaml`.
 
-The store is named `elektrokube-sso-v1`. Heimdall discovers it through the authenticated
-OpenFGA API and requires exactly one matching store. This avoids hard-coded/generated
-store IDs being copied between controllers. The completed Job is retained, has no TTL,
-and is not rerun on a normal Flux reconciliation. It has no automatic retry: a partial
-import must not silently create multiple stores. The model uses the latest model in this
-dedicated, versioned store; only administrators can change it.
+- `values.group: sso-users` admits members of `sso-users` to the user portal.
+- An empty `values.group` admits administrators only, as on `authentik.admin.internal`.
+- Administrators in `cluster-admins` or built-in `authentik Admins` can use every
+  registered protected service. An unknown hostname still hits the deny-by-default rule.
+- For a new ordinary application, set its rule's `values.group` to an Authentik group
+  such as `sso-reports`, then manage membership in Authentik's UI.
 
-To release changed grants or a changed model, increment the version in the store name,
-Job name, ConfigMap name/reference and Heimdall discovery/validation configuration in one
-commit. Flux imports the new immutable store before reconciling Heimdall. Keep old stores
-until rollback is no longer needed. Do not mutate the mounted policy file alone: an
-already completed Kubernetes Job does not execute again.
-
-If the import fails, inspect `kubectl -n sso logs job/openfga-policy-v1`. Use a local
-administrator port-forward and the upstream `fga` CLI with the generated `openfga-token`
-to inspect the store. If a store should be preserved, commit a renamed recovery Job using
-the same policy ConfigMap and add `--store-id=<existing-id>` to its `store import` arguments.
-The upstream CLI imports into that store and ignores duplicate grants. A new Job name is
-necessary because the previous Job has finished and its pod specification is immutable.
-The recovery Job must complete before Flux marks the authorization stage ready. If an
-incomplete store is disposable, deliberately remove that store with `fga store delete`,
-then delete the failed Job and let Flux recreate it. Never delete a healthy store to
-address a login issue.
-Duplicate stores deliberately deny access until an administrator resolves the ambiguity.
-Kubernetes access remains the recovery path even when web SSO is unavailable.
+Group names are compared exactly. Account creation alone grants no access. Changing a
+service's allowed group is a Git edit applied by Flux; adding or removing people from
+that group is an Authentik UI operation. The same check applies to browser sessions and
+workload tokens. No user-membership synchronization or second permission store is needed.
+See [permission management](docs/permissions.md) and [service onboarding](docs/service-onboarding.md).
 
 ## Operations and validation
 
 ```sh
 kubectl -n flux-system get kustomizations -l app.kubernetes.io/part-of=elektrokube-sso
-kubectl -n sso get pods,jobs,clusters.postgresql.cnpg.io,certificates,httproutes
+kubectl -n sso get pods,clusters.postgresql.cnpg.io,certificates,httproutes
 kubectl -n sso get gateway lan-gateway -o yaml
 kubectl -n sso get httproutes -o yaml
 dig @NODE_IP auth.internal
@@ -264,50 +248,42 @@ curl --cacert elektrokube-sso-ca.crt -I https://auth.internal/if/user/
 ```
 
 After reconciliation, require `Accepted=True` and `ResolvedRefs=True` on every route and
-`Programmed=True` on the Gateway. Confirm an ordinary account is denied at both admin
-hosts, an administrator is allowed, and an unknown hostname has no application route.
+`Programmed=True` on the Gateway. Confirm an ordinary account is denied at the admin
+hostname, an administrator is allowed, and an unknown hostname has no application route.
 During a controlled maintenance window, make the authorizer unavailable and verify a
 protected request fails rather than reaching its backend. These live checks exercise
 Cilium routing and policies that offline manifest validation cannot prove.
 
-Upgrading the original configuration renames `Gateway/sso` to `Gateway/lan-gateway`.
-Flux prunes the old Gateway and updates the parent references. Because both use node ports
-80/443, expect a brief routing interruption while Cilium reconciles the rename. The CA,
-secrets, databases, HTTPRoute names and OpenFGA store are preserved.
-
-The shipped policy can be tested without a cluster:
+Validate the shipped rules with Heimdall's own validator:
 
 ```sh
-docker run --rm -v "$PWD/infrastructure/authorization:/policy:ro" \
-  openfga/cli:v0.8.1 model test --tests /policy/store.fga.yaml
 docker run --rm -v "$PWD/infrastructure/heimdall:/etc/heimdall:ro" \
   -v "$PWD/infrastructure/heimdall:/etc/heimdall-rules:ro" \
-  -e OPENFGA_TOKEN=validation-token dadrus/heimdall:0.17.22 \
+  dadrus/heimdall:0.17.22 \
   validate rules /etc/heimdall/rules.yaml --config /etc/heimdall/config.yaml \
   --insecure-skip-ingress-tls-enforcement --insecure-skip-egress-tls-enforcement
 ```
 
-Browser traffic uses TLS. Heimdall's internal gRPC and its calls to oauth2-proxy/OpenFGA
+Browser traffic uses TLS. Heimdall's internal gRPC and its calls to oauth2-proxy
 use HTTP inside the cluster, with the two corresponding TLS-enforcement exceptions
 explicitly configured. Cilium policies restrict these endpoints to their callers and the
 Gateway's reserved ingress identity. TLS enforcement for unrelated features and the
 deny-by-default rule remain enabled. This does not provide encryption against compromised
 nodes; enable cluster transport encryption or add backend TLS when that is required.
 
-Both databases use one CNPG instance and one Longhorn replica, consistent with the base
+Authentik's database uses one CNPG instance and one Longhorn replica, consistent with the base
 storage setup. This is not an HA or backup configuration. Before production use, choose
-database replication and backups for your failure model. Back up both databases plus
+database replication and backups for your failure model. Back up the Authentik database plus
 the generated SSO secrets and CA key. Flux orphaning and prune exclusions preserve state
 but are not backups. Uninstall deliberately; deleting the root does not delete the stack.
 
 Pinned components: Authentik chart `2026.8.3`, oauth2-proxy `v7.15.4`, Heimdall `0.17.22`,
-OpenFGA `v1.21.0`, FGA CLI `v0.8.1`, PostgreSQL `17.11-standard-trixie`, CoreDNS `1.14.7`,
+PostgreSQL `17.11-standard-trixie`, CoreDNS `1.14.7`,
 cert-manager chart `v1.21.2`, and Mittwald secret generator chart `3.4.1`.
 
 Upstream references: [Cilium ExternalAuth](https://github.com/cilium/cilium/tree/v1.20.2/examples/kubernetes/gateway/external-authz),
-[Heimdall mechanisms](https://dadrus.github.io/heimdall/dev/docs/mechanisms/),
+[Heimdall local group authorization](https://dadrus.github.io/heimdall/dev/docs/mechanisms/authorizers/#_local_cel),
 [Authentik blueprints](https://docs.goauthentik.io/customize/blueprints/),
-[OpenFGA store files](https://openfga.dev/docs/modeling/store-file-format),
 [CoreDNS templates](https://coredns.io/plugins/template/),
 [generated secrets](https://github.com/mittwald/kubernetes-secret-generator).
 See also [Authentik machine-to-machine authentication](https://docs.goauthentik.io/add-secure-apps/providers/oauth2/machine_to_machine/),

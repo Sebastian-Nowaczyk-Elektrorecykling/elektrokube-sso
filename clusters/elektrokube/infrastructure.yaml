@@ -107,10 +107,6 @@ spec:
     kind: Cluster
     name: authentik-db
     namespace: sso
-  - apiVersion: postgresql.cnpg.io/v1
-    kind: Cluster
-    name: openfga-db
-    namespace: sso
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -133,49 +129,6 @@ spec:
   dependsOn:
   - name: sso-credentials
   - name: sso-databases
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: sso-openfga
-  namespace: flux-system
-  labels:
-    app.kubernetes.io/part-of: elektrokube-sso
-spec:
-  interval: 5m
-  retryInterval: 1m
-  timeout: 20m
-  path: ./infrastructure/openfga
-  sourceRef:
-    kind: GitRepository
-    name: elektrokube-sso
-  prune: true
-  deletionPolicy: Orphan
-  wait: true
-  dependsOn:
-  - name: sso-credentials
-  - name: sso-databases
----
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: sso-authorization
-  namespace: flux-system
-  labels:
-    app.kubernetes.io/part-of: elektrokube-sso
-spec:
-  interval: 5m
-  retryInterval: 1m
-  timeout: 20m
-  path: ./infrastructure/authorization
-  sourceRef:
-    kind: GitRepository
-    name: elektrokube-sso
-  prune: false
-  deletionPolicy: Orphan
-  wait: true
-  dependsOn:
-  - name: sso-openfga
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -247,7 +200,6 @@ spec:
   wait: true
   dependsOn:
   - name: sso-oauth2-proxy
-  - name: sso-authorization
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

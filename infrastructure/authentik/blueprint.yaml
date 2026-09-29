@@ -34,8 +34,6 @@ entries:
           url: https://auth.internal/oauth2/callback
         - matching_mode: strict
           url: https://authentik.admin.internal/oauth2/callback
-        - matching_mode: strict
-          url: https://openfga.admin.internal/oauth2/callback
       sub_mode: user_uuid
       issuer_mode: per_provider
       include_claims_in_id_token: true
@@ -48,4 +46,4 @@ entries:
       name: Elektrokube SSO
       provider: !KeyOf provider
       meta_launch_url: https://auth.internal/if/user/
-      meta_description: Internal services protected by Cilium, Heimdall and OpenFGA
+      meta_description: Internal services protected by Cilium and Heimdall with Authentik SSO

@@ -57,7 +57,6 @@ spec:
         - --provider-ca-file=/etc/sso-ca/ca.crt
         - --whitelist-domain=auth.internal
         - --whitelist-domain=authentik.admin.internal
-        - --whitelist-domain=openfga.admin.internal
         ports:
         - name: http
           containerPort: 4180

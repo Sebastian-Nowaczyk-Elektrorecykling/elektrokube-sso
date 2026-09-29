@@ -7,12 +7,10 @@ rules:
       scheme: https
     execute:
       - authenticator: session
-      - contextualizer: store
-      - authorizer: unique-store
-      - authorizer: openfga
+      - authorizer: service-group
         config:
           values:
-            object: service:auth.internal
+            group: sso-users
       - finalizer: noop
     on_error:
       - error_handler: login
@@ -27,33 +25,11 @@ rules:
       scheme: https
     execute:
       - authenticator: session
-      - contextualizer: store
-      - authorizer: unique-store
-      - authorizer: openfga
+      - authorizer: service-group
         config:
           values:
-            object: service:authentik.admin.internal
+            group: ""
       - finalizer: noop
-    on_error:
-      - error_handler: login
-        if: >-
-          type(Error) == authentication_error &&
-          Request.Header("Authorization") == "" &&
-          Request.Header("Accept").contains("text/html")
-  - id: openfga-admin
-    match:
-      hosts: [{type: exact, value: openfga.admin.internal}]
-      routes: [{path: /}, {path: /**}]
-      scheme: https
-    execute:
-      - authenticator: session
-      - contextualizer: store
-      - authorizer: unique-store
-      - authorizer: openfga
-        config:
-          values:
-            object: service:openfga.admin.internal
-      - finalizer: openfga-credential
     on_error:
       - error_handler: login
         if: >-

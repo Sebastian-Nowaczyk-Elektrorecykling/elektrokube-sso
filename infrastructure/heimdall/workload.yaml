@@ -53,12 +53,6 @@ spec:
             memory: 64Mi
           limits:
             memory: 256Mi
-        env:
-        - name: OPENFGA_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: sso-credentials
-              key: openfga-token
         volumeMounts:
         - name: config
           mountPath: /etc/heimdall

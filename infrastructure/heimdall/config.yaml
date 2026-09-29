@@ -30,62 +30,26 @@ mechanisms:
         subject:
           id: user
         cache_ttl: 0s
-  contextualizers:
-    - id: store
-      type: generic
-      config:
-        endpoint:
-          url: http://openfga.sso.svc.cluster.local:8080/stores?name=elektrokube-sso-v1&page_size=100
-          method: GET
-          headers:
-            Authorization: Bearer ${OPENFGA_TOKEN}
-        cache_ttl: 30s
   authorizers:
-    - id: unique-store
+    - id: service-group
       type: cel
       config:
+        # Empty means administrator-only. Each ordinary service names its group.
+        values:
+          group: ""
+        # Only the authenticated oauth2-proxy response supplies group membership.
         expressions:
           - expression: >-
-              size(Outputs.store.stores) == 1 &&
-              Outputs.store.stores[0].name == 'elektrokube-sso-v1' &&
-              Outputs.store.continuation_token == ''
-            message: Exactly one complete policy store is required
-    - id: openfga
-      type: remote
-      config:
-        endpoint:
-          url: http://openfga.sso.svc.cluster.local:8080/stores/{{ (index .Outputs.store.stores 0).id }}/check
-          headers:
-            Authorization: Bearer ${OPENFGA_TOKEN}
-            Content-Type: application/json
-        # Only the authenticated oauth2-proxy response supplies group membership.
-        # JSON encoding prevents user-controlled claims from injecting tuples.
-        payload: |
-          {{- $user := printf "user:%s" .Subject.ID -}}
-          {{- $groups := .Subject.Attributes.groups | default list -}}
-          {{- $tuples := list -}}
-          {{- range $group := $groups -}}
-            {{- if regexMatch "^sso-[a-z0-9][a-z0-9._-]*$" $group -}}
-              {{- $tuples = append $tuples (dict "user" $user "relation" "member" "object" (printf "group:%s" $group)) -}}
-            {{- end -}}
-          {{- end -}}
-          {{- if or (has "cluster-admins" $groups) (has "authentik Admins" $groups) -}}
-            {{- $tuples = append $tuples (dict "user" $user "relation" "member" "object" "group:cluster-admins") -}}
-          {{- end -}}
-          {{- dict "tuple_key" (dict "user" $user "relation" "can_access" "object" .Values.object)
-                   "contextual_tuples" (dict "tuple_keys" $tuples)
-                   "consistency" "HIGHER_CONSISTENCY" | toJson -}}
-        expressions:
-          - expression: Payload.allowed == true
-        cache_ttl: 0s
+              Subject.ID != "" &&
+              has(Subject.Attributes.groups) &&
+              type(Subject.Attributes.groups) == list &&
+              Subject.Attributes.groups.exists(g,
+                g == "cluster-admins" || g == "authentik Admins" ||
+                (Values.group != "" && g == Values.group))
+            message: Account is not in an allowed service group
   finalizers:
     - id: noop
       type: noop
-    - id: openfga-credential
-      type: header
-      config:
-        headers:
-          Authorization: Bearer ${OPENFGA_TOKEN}
   error_handlers:
     - id: login
       type: redirect

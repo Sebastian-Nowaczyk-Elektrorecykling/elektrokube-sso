@@ -29,35 +29,3 @@ spec:
       memory: 256Mi
     limits:
       memory: 1Gi
----
-apiVersion: postgresql.cnpg.io/v1
-kind: Cluster
-metadata:
-  name: openfga-db
-  namespace: sso
-  annotations:
-    kustomize.toolkit.fluxcd.io/prune: disabled
-spec:
-  instances: 1
-  imageName: ghcr.io/cloudnative-pg/postgresql:17.11-standard-trixie
-  enableSuperuserAccess: false
-  bootstrap:
-    initdb:
-      database: openfga
-      owner: openfga
-  storage:
-    size: 10Gi
-    storageClass: longhorn-cnpg
-  affinity:
-    tolerations:
-    - key: CriticalAddonsOnly
-      operator: Exists
-    - key: node-role.kubernetes.io/control-plane
-      operator: Exists
-      effect: NoSchedule
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      memory: 1Gi

@@ -49,7 +49,6 @@ spec:
   dnsNames:
   - auth.internal
   - authentik.admin.internal
-  - openfga.admin.internal
   issuerRef:
     name: sso-ca
     kind: Issuer

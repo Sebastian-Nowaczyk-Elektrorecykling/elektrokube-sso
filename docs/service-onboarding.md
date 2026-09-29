@@ -3,7 +3,7 @@
 DNS answers every name below `.internal`, at any depth. The shared `sso/lan-gateway`
 has hostname-free HTTP/HTTPS listeners. Neither needs editing for a new hostname.
 An actual application still needs an explicit route, a valid certificate and a permission
-grant. Resolving a name never publishes an application or authorizes a user.
+rule. Resolving a name never publishes an application or authorizes a user.
 
 This procedure uses the hypothetical ordinary-user endpoint `reports.team.internal`,
 backed by `Service/reports` in namespace `reports` on port 80. **No reports service or
@@ -25,13 +25,12 @@ upstream configuration; no generator, custom controller or bootstrap script is r
 | External authorization | Retain the `ExternalAuth` GRPC filter targeting `heimdall-authz:4456` on **every application backend rule**, including API paths. Keep `cookie`, `authorization` and `accept` in `grpc.allowedHeaders`. Only the `/oauth2/` authentication-service rule is exempt. |
 | HTTP redirect | Add an exact-host HTTPRoute for the new endpoint attached to `lan-gateway`'s `http` listener with an HTTPS `RequestRedirect`, or add the hostname to `sso-http-redirect` in `infrastructure/gateway/login-routes.yaml`. |
 | OIDC callback | Add the strict URL `https://reports.team.internal/oauth2/callback` to the existing provider's `redirect_uris` in `infrastructure/authentik/blueprint.yaml`. Add `--whitelist-domain=reports.team.internal` to `infrastructure/oauth2-proxy/workload.yaml`. |
-| Heimdall rule | Copy the `authentik-users` rule in `infrastructure/heimdall/rules.yaml`; assign a unique ID, change `match.hosts` to the exact hostname and `values.object` to `service:reports.team.internal`. Keep both `/` and `/**`, scheme `https`, the session/store/OpenFGA stages and the `noop` finalizer. |
-| Permission | Create `sso-reports` in the Authentik blueprint or UI. Add the OpenFGA viewer grant below, then publish a new version of the immutable policy store as described in the README. Assign users through Authentik's UI after the grant is live. |
+| Heimdall rule | Copy the `authentik-users` rule in `infrastructure/heimdall/rules.yaml`; assign a unique ID, change `match.hosts` to the exact hostname and the `service-group` authorizer's `values.group` to `sso-reports`. Keep both `/` and `/**`, scheme `https`, the `session` authenticator and the `noop` finalizer. |
+| Permission | Create `sso-reports` in the Authentik blueprint or UI, then assign users or service accounts through Authentik's UI. That group matches the service's Heimdall rule directly; there is no separate policy store to update. |
 
-The `sso-openfga-admin` rule is special: its Heimdall finalizer injects the internal
-OpenFGA credential. **Do not copy that finalizer for another application.** Use `noop`.
-Do not route ordinary services under `.admin.internal`; admin-only endpoints get only
-administrator grants, not an ordinary-user viewer grant.
+For admin-only endpoints under `.admin.internal`, set `values.group: ""` to admit only
+`cluster-admins` and built-in `authentik Admins`. Ordinary services use other names under
+`.internal`. Administrators can also access every registered ordinary service.
 
 `allowedRoutes.namespaces.from: Same` deliberately keeps route publication under the
 `sso` namespace's administrative control. It does not prevent using applications in
@@ -54,32 +53,23 @@ spec:
     name: reports
 ```
 
-The ordinary-user service grant is:
+The ordinary-user authorization step in the new Heimdall rule is:
 
 ```yaml
-- user: group:sso-reports#member
-  relation: viewer
-  object: service:reports.team.internal
+- authorizer: service-group
+  config:
+    values:
+      group: sso-reports
 ```
 
-To let administrators use the service too, add:
+Group names are matched exactly against oauth2-proxy's verified claims; `sso-` is a
+convention, not a wildcard grant. No edit to the shared authorizer is needed for a new
+service. Creating an account, resolving the name, adding a route, or receiving a valid
+token alone grants no access. Apply rule changes through Flux and manage group membership
+in Authentik. No database import or policy-version coordination is needed.
 
-```yaml
-- user: group:cluster-admins#member
-  relation: admin
-  object: service:reports.team.internal
-```
-
-Only group names matching `sso-[a-z0-9][a-z0-9._-]*` and the explicit administrator
-mapping become contextual membership tuples. Adding a group in that convention needs
-no change to Heimdall's authentication/authorization mechanisms. Creating an account,
-resolving the name, adding a route, or receiving a valid token alone grants no access.
-
-Update the model tests to cover the new group, an unrelated group, an administrator and
-an account with no groups. For an admin hostname, ordinary users must remain denied.
-Adding a grant requires a new policy release: change the versioned store name, import
-Job name, policy ConfigMap name/reference and Heimdall discovery/validation together.
-Do not edit the mounted file and expect the already completed import Job to run again.
+Test the new group, an unrelated group, an administrator and an account with no groups.
+For an admin hostname, ordinary users must remain denied.
 
 ## Names, paths and TLS
 
