@@ -89,6 +89,10 @@ and oauth2-proxy cookie key. CloudNativePG generates database
 credentials. No passwords or private keys are committed, and the registration script
 does not print them.
 
+The cookie key uses 32 random bytes encoded as URL-safe Base64 (`32B`, `base64url`).
+Its encoded value is 44 characters, which oauth2-proxy decodes to a 32-byte AES key.
+Standard Base64 can contain `+` or `/`, which oauth2-proxy does not accept here.
+
 The checked base repository revisions (`elektrokube-scripts` `c14f849`, Cilium/Flux
 `283cec8`, storage `fbc601b`) do not install cert-manager. Cilium 1.20.2 defaults to
 Helm-generated Hubble certificates (`hubble.tls.auto.method=helm`); that is separate from
