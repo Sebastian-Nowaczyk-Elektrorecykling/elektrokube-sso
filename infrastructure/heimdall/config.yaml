@@ -62,5 +62,7 @@ default_rule:
     - finalizer: noop
 providers:
   file_system:
-    src: /etc/heimdall-rules
-    watch: true
+    # Load only the rule file, not Kubernetes' projected-volume symlinks.
+    src: /etc/heimdall-rules/rules.yaml
+    # Kustomize hashes ConfigMap names; Flux rolls the Deployment after changes.
+    watch: false

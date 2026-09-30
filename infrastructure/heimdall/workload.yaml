@@ -62,11 +62,11 @@ spec:
           readOnly: true
         readinessProbe:
           httpGet:
-            path: /health
+            path: /.well-known/health
             port: management
         livenessProbe:
           httpGet:
-            path: /health
+            path: /.well-known/health
             port: management
           initialDelaySeconds: 15
       volumes:

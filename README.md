@@ -258,6 +258,13 @@ During a controlled maintenance window, make the authorizer unavailable and veri
 protected request fails rather than reaching its backend. These live checks exercise
 Cilium routing and policies that offline manifest validation cannot prove.
 
+Heimdall loads `/etc/heimdall-rules/rules.yaml` explicitly, avoiding Kubernetes'
+`..data` directory link in the projected ConfigMap volume. Rule watching is disabled:
+Kustomize gives changed ConfigMaps new names, so Flux rolls Heimdall when its rules or
+configuration change. CI starts Heimdall with the same projected-volume layout and
+checks the configured readiness and liveness probes (`/.well-known/health`) in addition
+to validating rule syntax.
+
 Validate the shipped rules with Heimdall's own validator:
 
 ```sh

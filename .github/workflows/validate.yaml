@@ -42,3 +42,5 @@ jobs:
           dadrus/heimdall:0.17.22
           validate rules /etc/heimdall/rules.yaml --config /etc/heimdall/config.yaml
           --insecure-skip-ingress-tls-enforcement --insecure-skip-egress-tls-enforcement
+      - name: Verify Heimdall startup with projected ConfigMaps
+        run: python3 tests/heimdall-startup.py
