@@ -56,6 +56,12 @@ mechanisms:
       config:
         to: https://{{ .Request.URL.Host }}/oauth2/start?rd={{ .Request.URL | urlenc }}
         code: 302
+    - id: access-denied
+      type: redirect
+      config:
+        # A public static page must not require the permission being denied.
+        to: https://auth.internal/sso/access-denied
+        code: 302
 default_rule:
   execute:
     - authenticator: deny

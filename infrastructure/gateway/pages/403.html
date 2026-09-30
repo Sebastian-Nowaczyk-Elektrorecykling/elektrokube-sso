@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Access denied · Elektrokube</title>
+  <style>
+    :root { color-scheme: light dark; font: 17px/1.6 system-ui, sans-serif; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #101827; color: #edf2fa; }
+    main { max-width: 35rem; margin: 2rem; }
+    .status { color: #fbbf24; font-weight: 700; letter-spacing: .08em; }
+    h1 { font-size: clamp(2rem, 7vw, 3rem); line-height: 1.15; margin: .6rem 0 1.5rem; }
+    p { color: #c6d1e2; }
+    a { color: #9dc7ff; text-underline-offset: .25em; }
+    .help { padding-top: 1rem; border-top: 1px solid #334155; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="status">ELEKTROKUBE · 403</div>
+    <h1>You don't have access to this application.</h1>
+    <p>Your sign-in was accepted, but your account is missing a required access group.
+       This is a permission decision, not a connection failure.</p>
+    <p>Ask a cluster administrator to grant your account access to the application
+       you were opening.</p>
+    <p class="help">After access is granted, sign out of that application and sign back in,
+       or wait up to five minutes before trying again.</p>
+    <a href="https://auth.internal/if/user/">Open your user portal</a>
+  </main>
+</body>
+</html>

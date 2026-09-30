@@ -19,6 +19,7 @@ flowchart TD
 
 | Address | Purpose | Access |
 | --- | --- | --- |
+| `https://auth.internal/` | Authentik login, including initial `akadmin` sign-in | Public login flow; does not require a gateway session |
 | `https://auth.internal/if/user/` | Authentik user portal and account settings | `sso-users` or administrators |
 | `https://authentik.admin.internal/if/admin/` | Authentik administration | Administrators only, plus Authentik's native administrator permission |
 
@@ -40,10 +41,14 @@ Routes are centrally owned in `sso`; a backend in another namespace uses a narro
 ReferenceGrant. Namespace-wide permission to publish unprotected routes is not granted.
 
 The identity provider's login flows, OIDC endpoints, required bootstrap APIs and static
-assets on `auth.internal` are reachable before SSO. `/oauth2/` on each hostname goes to
+assets on `auth.internal` are reachable before SSO. Its exact `/` route redirects directly
+to `/if/flow/default-authentication-flow/`, independently of Heimdall and oauth2-proxy.
+`/oauth2/` on each hostname goes to
 oauth2-proxy for login and callback handling. These exceptions terminate at authentication
 services, never at a protected application. All application routes use native Gateway API
 `ExternalAuth`; ordinary HTTP redirects to HTTPS. Requests for unknown hosts have no route.
+The public `/sso/access-denied` endpoint serves only a static permission-error page using
+upstream unprivileged Nginx. It cannot proxy requests to applications.
 
 Authentik administration keeps its native session check in addition to the external
 authorization check. Because it uses a separate origin, its native login may ask you to
@@ -173,7 +178,10 @@ Retrieve the generated initial password through your existing Kubernetes adminis
 kubectl -n sso get secret sso-credentials -o jsonpath='{.data.bootstrap-password}' | base64 -d
 ```
 
-Open `https://auth.internal/if/user/` and sign in as `akadmin`. Change that initial password,
+Open `https://auth.internal/` and sign in as `akadmin`. The explicit bootstrap URL is
+`https://auth.internal/if/flow/default-authentication-flow/`; neither entry requires an
+existing SSO cookie or a successful Heimdall authorization call. Then open
+`https://authentik.admin.internal/if/admin/`. Change that initial password,
 enroll MFA using Authentik's normal controls, then create ordinary users and assign their
 groups. The blueprint does not overwrite passwords or user membership on reconciliation.
 It reuses Authentik's upstream flows, signing certificate and standard profile scope;
@@ -196,8 +204,46 @@ is mapped to `sub`; the email scope is not requested. This avoids relying on unv
 directory email addresses. Heimdall checks only groups returned by oauth2-proxy after
 cookie or bearer-token verification. Client-supplied identity/group headers grant nothing.
 Missing groups, unknown services, denied checks and authentication-service errors deny
-access. Browser authentication failures redirect to login; API clients receive 401,
-and authenticated users without permission receive 403.
+access. Browser authentication failures redirect to login. An authenticated browser without
+permission receives a 302 redirect to `https://auth.internal/sso/access-denied`, which
+returns HTTP **403** with a page explaining the missing access group and how to request
+access. This page is used only for authorization denials, not authentication failures or
+SSO service errors. API clients and requests with an `Authorization` header receive direct
+401/403 responses without a page redirect.
+
+### Troubleshoot a generic 403 before login
+
+Envoy returns a generic 403 when its external authorization call fails, even if no user
+has logged in. The Heimdall network policy admits `host` and `remote-node` on TCP 4456
+because Envoy's asynchronous authorization client can originate from a cluster node.
+The `ingress` identity alone is insufficient for that call. Other application policies
+still admit only their configured gateway/internal callers; node access was added only
+to the authorization service.
+
+The public login flow remains reachable independently of external authorization. If it
+also fails, inspect the Gateway route, Authentik readiness and Authentik logs rather than
+changing user groups. To distinguish a policy/connectivity failure from a user denial:
+
+```sh
+flux get kustomizations -n flux-system
+kubectl -n sso get pods,svc,endpointslices
+kubectl -n sso get httproute sso-login sso-auth sso-authentik-admin -o yaml
+kubectl -n sso logs deployment/heimdall-authz --since=5m
+```
+
+From a client that trusts the internal CA, a fresh browser request to the protected
+admin path must return a login redirect, while the public flow must return Authentik:
+
+```sh
+curl --cacert elektrokube-sso-ca.crt -sS -D - -o /dev/null \
+  -H 'Accept: text/html' https://authentik.admin.internal/if/admin/
+curl --cacert elektrokube-sso-ca.crt -sS -D - -o /dev/null \
+  https://auth.internal/if/flow/default-authentication-flow/
+```
+
+If the protected request still returns a generic 403 and Heimdall has no matching request,
+inspect Cilium/Envoy authorization errors and Hubble drops to `sso/heimdall-authz:4456`.
+The repository tests cannot verify a live cluster's datapath or reconciliation status.
 
 ## Non-interactive workloads
 

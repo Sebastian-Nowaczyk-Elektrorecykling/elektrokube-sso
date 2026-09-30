@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install validation dependency
-        run: python3 -m pip install PyYAML==6.0.3
+        run: python3 -m pip install PyYAML==6.0.3 grpcio==1.84.0 xds-protos==1.84.0
       - name: Validate generated cookie key with oauth2-proxy
         run: python3 tests/cookie-secret.py
       - name: Validate Heimdall rules and mechanisms
@@ -44,3 +44,7 @@ jobs:
           --insecure-skip-ingress-tls-enforcement --insecure-skip-egress-tls-enforcement
       - name: Verify Heimdall startup with projected ConfigMaps
         run: python3 tests/heimdall-startup.py
+      - name: Verify browser login, permission denial and API behavior
+        run: python3 tests/browser-auth.py
+      - name: Verify the static permission page returns HTTP 403
+        run: python3 tests/access-pages.py

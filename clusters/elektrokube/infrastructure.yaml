@@ -153,6 +153,11 @@ spec:
   - name: sso-certificates
   - name: cilium
   - name: gateway-api
+  healthChecks:
+  - apiVersion: apps/v1
+    kind: Deployment
+    name: sso-access-pages
+    namespace: sso
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

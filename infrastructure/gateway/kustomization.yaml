@@ -3,3 +3,10 @@ kind: Kustomization
 resources:
 - gateway.yaml
 - login-routes.yaml
+- access-pages.yaml
+configMapGenerator:
+- name: sso-access-pages
+  namespace: sso
+  files:
+  - nginx.conf=pages/nginx.conf
+  - 403.html=pages/403.html

@@ -10,9 +10,30 @@ spec:
   ingress:
   - fromEntities:
     - ingress
+    # Envoy's asynchronous ext_authz client originates from the node, not
+    # necessarily from the ingress identity used for application traffic.
+    - host
+    - remote-node
     toPorts:
     - ports:
       - port: '4456'
+        protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: sso-access-pages
+  namespace: sso
+spec:
+  endpointSelector:
+    matchLabels:
+      app: sso-access-pages
+  ingress:
+  - fromEntities:
+    - ingress
+    toPorts:
+    - ports:
+      - port: '8080'
         protocol: TCP
 ---
 apiVersion: cilium.io/v2

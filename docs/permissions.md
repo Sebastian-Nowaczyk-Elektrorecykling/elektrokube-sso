@@ -5,6 +5,12 @@ group authorizer checks the verified groups against the requested service's rule
 People and service accounts are denied until they belong to an allowed group.
 There is no separate permission database or custom administration app.
 
+On a fresh installation, sign in at `https://auth.internal/` as `akadmin` with the
+generated bootstrap password described in the README. This public login flow does not
+require an existing gateway session. A signed-in browser missing an application group
+is sent to the shared **403 Access denied** page. Grant the appropriate group below;
+repeatedly entering the same password will not grant permission.
+
 ## Grant a person access
 
 1. Sign in as an administrator at `https://authentik.admin.internal/if/admin/`.

@@ -18,6 +18,11 @@ rules:
           type(Error) == authentication_error &&
           Request.Header("Authorization") == "" &&
           Request.Header("Accept").contains("text/html")
+      - error_handler: access-denied
+        if: >-
+          type(Error) == authorization_error &&
+          Request.Header("Authorization") == "" &&
+          Request.Header("Accept").contains("text/html")
   - id: authentik-admin
     match:
       hosts: [{type: exact, value: authentik.admin.internal}]
@@ -34,5 +39,10 @@ rules:
       - error_handler: login
         if: >-
           type(Error) == authentication_error &&
+          Request.Header("Authorization") == "" &&
+          Request.Header("Accept").contains("text/html")
+      - error_handler: access-denied
+        if: >-
+          type(Error) == authorization_error &&
           Request.Header("Authorization") == "" &&
           Request.Header("Accept").contains("text/html")

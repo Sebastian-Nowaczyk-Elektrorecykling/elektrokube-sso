@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sso-access-pages
+  namespace: sso
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sso-access-pages
+  template:
+    metadata:
+      labels:
+        app: sso-access-pages
+    spec:
+      automountServiceAccountToken: false
+      tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        fsGroup: 101
+      containers:
+      - name: nginx
+        image: nginxinc/nginx-unprivileged:1.30.5-alpine
+        command: [nginx]
+        args: [-c, /etc/sso-pages/nginx.conf, -g, 'daemon off;']
+        ports:
+        - name: http
+          containerPort: 8080
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 101
+          runAsGroup: 101
+          capabilities:
+            drop: [ALL]
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+          limits:
+            memory: 64Mi
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+        volumeMounts:
+        - name: pages
+          mountPath: /etc/sso-pages
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: pages
+        configMap:
+          name: sso-access-pages
+      - name: tmp
+        emptyDir:
+          sizeLimit: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sso-access-pages
+  namespace: sso
+spec:
+  type: ClusterIP
+  selector:
+    app: sso-access-pages
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http

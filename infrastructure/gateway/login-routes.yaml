@@ -29,6 +29,25 @@ spec:
   hostnames:
   - auth.internal
   rules:
+  # The IdP's front door and bootstrap login must work without a gateway session.
+  - matches:
+    - path:
+        type: Exact
+        value: /
+    filters:
+    - type: RequestRedirect
+      requestRedirect:
+        path:
+          type: ReplaceFullPath
+          replaceFullPath: /if/flow/default-authentication-flow/
+        statusCode: 302
+  - matches:
+    - path:
+        type: Exact
+        value: /sso/access-denied
+    backendRefs:
+    - name: sso-access-pages
+      port: 8080
   - matches:
     - path:
         type: PathPrefix
