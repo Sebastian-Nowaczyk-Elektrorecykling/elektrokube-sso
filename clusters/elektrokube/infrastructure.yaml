@@ -13,7 +13,8 @@ spec:
   sourceRef:
     kind: GitRepository
     name: elektrokube-sso
-  prune: false
+  # Remove revoked policies from the cluster; namespaces have explicit retention.
+  prune: true
   deletionPolicy: Orphan
   wait: false
 ---

@@ -1,3 +1,16 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sso-default-deny-ingress
+  namespace: sso
+spec:
+  # Cilium combines this baseline with the explicit allows below. Removing the
+  # last per-service allow must not return a pod to default-allow behavior.
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  ingress: []
+---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
