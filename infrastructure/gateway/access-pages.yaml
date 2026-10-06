@@ -26,7 +26,7 @@ spec:
         fsGroup: 101
       containers:
       - name: nginx
-        image: nginxinc/nginx-unprivileged:1.30.5-alpine
+        image: nginxinc/nginx-unprivileged:1.31.6-alpine
         command: [nginx]
         args: [-c, /etc/sso-pages/nginx.conf, -g, 'daemon off;']
         ports:

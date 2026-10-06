@@ -1,5 +1,8 @@
 # Elektrokube SSO
 
+See the [2026-10-06 security audit and upgrade acceptance](docs/audit-2026-10-06.md)
+for the findings, remaining operational work and rollout tests.
+
 Flux-managed identity, authorization, HTTPS and internal DNS for the cluster built by
 [elektrokube-scripts](https://github.com/Sebastian-Nowaczyk-Elektrorecykling/elektrokube-scripts).
 This repository contains declarative upstream configuration only: no custom application,
@@ -59,7 +62,7 @@ redirects to the administrator hostname. Authentik's own RBAC protects its share
 
 Prerequisites already provided by the linked repositories:
 
-- Cilium **1.20.2 or newer**, Gateway API **v1.6.1 experimental** CRDs, and a ready `cilium` GatewayClass.
+- Cilium **1.20.2 or newer**, Gateway API **v1.6.2 experimental** CRDs, and a ready `cilium` GatewayClass.
 - Existing Flux controllers and ready `cilium`, `gateway-api`, `storage-cnpg` and
   `storage-classes` Kustomizations in `flux-system`.
 - CloudNativePG and the `longhorn-cnpg` StorageClass.
@@ -316,7 +319,7 @@ Validate the shipped rules with Heimdall's own validator:
 ```sh
 docker run --rm -v "$PWD/infrastructure/heimdall:/etc/heimdall:ro" \
   -v "$PWD/infrastructure/heimdall:/etc/heimdall-rules:ro" \
-  dadrus/heimdall:0.17.22 \
+  dadrus/heimdall:0.17.23 \
   validate rules /etc/heimdall/rules.yaml --config /etc/heimdall/config.yaml \
   --insecure-skip-ingress-tls-enforcement --insecure-skip-egress-tls-enforcement
 ```
@@ -328,15 +331,20 @@ Gateway's reserved ingress identity. TLS enforcement for unrelated features and 
 deny-by-default rule remain enabled. This does not provide encryption against compromised
 nodes; enable cluster transport encryption or add backend TLS when that is required.
 
+The `sso` namespace has default-deny pod ingress plus explicit Cilium allows.
+Flux prunes removed policies while retaining both managed namespaces. This does not
+restrict egress or host-network DNS; new services need explicit ingress policies.
+
 Authentik's database uses one CNPG instance and one Longhorn replica, consistent with the base
 storage setup. This is not an HA or backup configuration. Before production use, choose
 database replication and backups for your failure model. Back up the Authentik database plus
 the generated SSO secrets and CA key. Flux orphaning and prune exclusions preserve state
 but are not backups. Uninstall deliberately; deleting the root does not delete the stack.
 
-Pinned components: Authentik chart `2026.8.3`, oauth2-proxy `v7.15.4`, Heimdall `0.17.22`,
+Pinned components: Authentik chart `2026.8.3`, oauth2-proxy `v7.15.5`, Heimdall `0.17.23`,
 PostgreSQL `17.11-standard-trixie`, CoreDNS `1.14.7`,
-cert-manager chart `v1.21.2`, and Mittwald secret generator chart `3.4.1`.
+cert-manager chart `v1.21.2`, Mittwald secret generator chart `3.4.1`, and
+unprivileged Nginx `1.31.6-alpine`.
 
 Upstream references: [Cilium ExternalAuth](https://github.com/cilium/cilium/tree/v1.20.2/examples/kubernetes/gateway/external-authz),
 [Heimdall local group authorization](https://dadrus.github.io/heimdall/dev/docs/mechanisms/authorizers/#_local_cel),

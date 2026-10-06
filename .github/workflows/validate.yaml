@@ -7,30 +7,26 @@ permissions:
 jobs:
   manifests:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        path:
-          - bootstrap
-          - clusters/elektrokube
-          - infrastructure/foundation
-          - infrastructure/controllers
-          - infrastructure/credentials
-          - infrastructure/certificates
-          - infrastructure/databases
-          - infrastructure/authentik
-          - infrastructure/gateway
-          - infrastructure/oauth2-proxy
-          - infrastructure/heimdall
-          - infrastructure/routes
-          - infrastructure/dns
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - name: Render manifests
-        run: kubectl kustomize '${{ matrix.path }}' > /dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned validation tools
+        run: bash tests/install-tools.sh
+      - name: Install validation dependency
+        run: python3 -m pip install PyYAML==6.0.3
+      - name: Check authentication and retention boundaries
+        run: python3 tests/security-invariants.py
+      - name: Render charts and validate all resource schemas
+        run: python3 tests/render-manifests.py
   upstream-validation:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install validation dependency
         run: python3 -m pip install PyYAML==6.0.3 grpcio==1.84.0 xds-protos==1.84.0
       - name: Validate generated cookie key with oauth2-proxy
@@ -39,7 +35,7 @@ jobs:
         run: >-
           docker run --rm -v "$PWD/infrastructure/heimdall:/etc/heimdall:ro"
           -v "$PWD/infrastructure/heimdall:/etc/heimdall-rules:ro"
-          dadrus/heimdall:0.17.22
+          dadrus/heimdall:0.17.23
           validate rules /etc/heimdall/rules.yaml --config /etc/heimdall/config.yaml
           --insecure-skip-ingress-tls-enforcement --insecure-skip-egress-tls-enforcement
       - name: Verify Heimdall startup with projected ConfigMaps
